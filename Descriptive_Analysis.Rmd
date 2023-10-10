@@ -1,0 +1,59 @@
+---
+title: "Descriptive Analysis"
+author: "Nessa Bryce"
+date: "2023-10-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+## PACKAGES:
+if(!require("pacman")) {install.packages("pacman"); require("pacman")} ## for plotting correlation plots
+
+p_load("ggcorrplot","corrplot","smacof","colorspace","stringr", "ggplot2","gridExtra","reshape2","tidyr","plyr","haven",
+       "rstudioapi","patchwork", "Rmisc","ggcorrplot", "dplyr")
+
+## Setting working directory:
+current_path <- getActiveDocumentContext()$path    ## gets path for current R script
+setwd(dirname(current_path)) ## sets working directory to folder where current script is located
+
+```
+## Descriptive Analysis:
+
+
+```{r data preparation, echo=FALSE, message=FALSE}
+
+## loading CSV:
+MetaAnalysisROI <- read.csv("Data/MetaAnalysisROIs_EmotionProcessing_MeanActivity.csv")
+#View(MetaAnalysisROI)
+GroupNetworks <- read.csv("Data/GroupBased_Networks_EmotionProcessing_MeanActivity.csv")
+#View(GroupNetworks)
+IndividualNetworks <- read.csv("Data/Individual_Networks_EmotionProcessing_MeanActivity.csv")
+#View(IndividualNetworks)
+
+## Subsetting the data for ease of plotting:
+
+## Amygdala Data: 
+names(MetaAnalysisROI)
+Amygdala_df <- MetaAnalysisROI %>% filter(ROI == "Amygdala_bl_Harvard-Oxford_thr50_binarized")
+
+# Create the plot
+Amygdala_plot <- 
+  ggplot(Amygdala_df, aes(x = Session, y = Mean_ROI_Activity, group = SubjectID, color = factor(SubjectID))) + 
+  geom_line() + 
+  geom_point() +
+  labs(
+    title = "Amygdala Activation Across Sessions",
+    x = "Session",
+    y = "Amygdala Activation",
+    color = "Subject"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Add this line
+
+Amygdala_plot
+
+```
+
+
