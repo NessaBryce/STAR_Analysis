@@ -89,6 +89,25 @@ network_mapping <- c(
   "17Networks_17" = "DMN-3"
 )
 
+Group_colors <- c(
+"VisCent" = "#713583",
+"VisPeri" = "#e93e35",
+"SomMotA" = "#4E85D1",
+"SomMotB" = "#6ac3a8",
+"DorsAttnA" = "#7aae68",
+"DorsAttnB" = "#35712b",
+"SalVentAttnA" = "#b34bef",
+"SalVentAttnB" = "#eba7d4",
+"LimbicB" = "#767f3b",
+"LimbicA" = "#e6f4b9",
+"ContA" = "#d29e53",
+"ContB" = "#7b3f4b",
+"ContC" = "#7b8baf",
+"DefaultA" = "#fefe5c",
+"DefaultB" = "#b64c54",
+"DefaultC" = "#1c1e74",
+"TempPar" = "#1835f3")
+
 # Use mutate to replace the values in the Network column
 GroupNetworks <- GroupNetworks %>%
   mutate(Network = recode(Network, !!!network_mapping))
