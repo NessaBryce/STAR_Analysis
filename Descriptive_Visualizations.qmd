@@ -1,0 +1,368 @@
+---
+title: "Descriptive Visualization"
+author: "Nessa Bryce"
+format: html
+editor: visual
+---
+
+## Evaluating Boundary Approaches
+
+```{r setup}
+#| include: FALSE
+
+## -------- LOADING PACKAGES:
+
+if(!require("pacman")) {install.packages("pacman"); require("pacman")} ## for plotting correlation plots
+p_load("ggcorrplot","corrplot","smacof","colorspace","stringr", "ggplot2","gridExtra" ,"reshape2","tidyr","plyr","haven","rstudioapi","patchwork", "Rmisc","ggcorrplot","dplyr")
+```
+
+```{r data preparation}
+#| include: FALSE
+
+## -------- DATA PREPARATION : ####
+
+## Loading Data:
+MetaAnalysisROI <- read.csv("Data/MetaAnalysisROIs_EmotionProcessing_MeanActivity.csv")
+GroupNetworks <- read.csv("Data/GroupBased_Networks_EmotionProcessing_MeanActivity.csv")
+IndividualNetworks <- read.csv("Data/Individual_Networks_EmotionProcessing_MeanActivity.csv")
+
+### -------- Meta Analysis Based ROIs :#### 
+
+MetaAnalysisROI$Session <- as.numeric(sub("session", "", MetaAnalysisROI$Session, ignore.case = TRUE))
+colnames(MetaAnalysisROI)[4] <- "Mean_Activity"
+
+label_map <- c(
+"Amygdala_bl_Harvard-Oxford_thr50_binarized" = "Amygdala",
+"5mm_4_47_7" = "mPFC",
+"5mm_42_25_3" = "r_IFG",
+"5mm_-42_25_3" = "l_IFG",
+"5mm_48_17_29" = "r_MFG",
+"5mm_-42_13_27" = "l_MFG",
+"5mm_-2_8_59" = "SFG",
+"5mm_53_-50_4" = "r_MTG",
+"5mm_38_-55_-20" = "r_Fusiform",
+"5mm_-40_-55_-22" = "l_Fusiform",
+"5mm_44_4_0" = "r_Insula",
+"5mm_-42_4_-1" = "l_Insula",
+"5mm_-36_-19_48" = "l_PrimaryMotor",
+"5mm_38_-18_45" = "r_PrimaryMotor",
+"5mm_-52_-19_7" = "l_Auditory",
+"5mm_50_-21_7" = "R_Auditory"
+)
+
+MetaAnalysisROI <- MetaAnalysisROI %>%
+  mutate(ROI = ifelse(ROI %in% names(label_map), label_map[as.character(ROI)], ROI))
+
+## Creating Amygdala specific df: 
+
+amygdala_df <- MetaAnalysisROI %>%
+  filter(grepl("Amygdala", ROI, ignore.case = TRUE))
+
+### --------  Group Networks (Yeo,2011): ####
+
+## Removing "STAR" from all data in the SubjectID column: 
+GroupNetworks$SubjectID <- gsub("STAR", "", GroupNetworks$SubjectID)
+## Removing "session" from all data in the Session column:
+GroupNetworks$Session <- as.numeric(sub("session", "", GroupNetworks$Session, ignore.case = TRUE))
+
+colnames(GroupNetworks)[c(3,4)] <- c("Network", "Mean_Activity")
+unique(GroupNetworks$Network)
+
+names(GroupNetworks)
+network_mapping <- c(
+  "17Networks_1" = "Vis-1",
+  "17Networks_2" = "Vis-2",
+  "17Networks_3" = "MOT-1",
+  "17Networks_4" = "MOT-2",
+  "17Networks_5" = "DAN-2",
+  "17Networks_6" = "DAN-1",
+  "17Networks_7" = "VAN-1",
+  "17Networks_8" = "FP-1",
+  "17Networks_9" = "LIM-1",
+  "17Networks_10" = "LIM-2",
+  "17Networks_11" = "FP-2",
+  "17Networks_12" = "FP-3",
+  "17Networks_13" = "FP-4",
+  "17Networks_14" = "MOT-3",
+  "17Networks_15" = "DMN-1",
+  "17Networks_16" = "DMN-2",
+  "17Networks_17" = "DMN-3"
+)
+
+# Use mutate to replace the values in the Network column
+GroupNetworks <- GroupNetworks %>%
+  mutate(Network = recode(Network, !!!network_mapping))
+
+### --------  Individual Networks: (Kong, 2018) #### 
+
+## Removing "STAR" from all data in the SubjectID column: 
+IndividualNetworks$SubjectID <- gsub("STAR", "", IndividualNetworks$SubjectID)
+## Removing "session" from all data in the Session column:
+IndividualNetworks$Session <- as.numeric(sub("session", "", IndividualNetworks$Session, ignore.case = TRUE))
+colnames(IndividualNetworks)[c(3,4)] <- c("Subject_Network", "Mean_Activity")
+
+## Color palette to match network colors from dlabel file in connectome work bench:
+Individual_colors <- c(
+  "VIS-P" = "#aa467d",
+  "CG-OP" = "#b859fb",
+  "DN-B" = "#cd3d4d",
+  "SMOT-B" = "#1bb3f2",
+  "AUD" = "#e7d7a5",
+  "PM-PPr" = "#42e7ce",
+  "dATN-B" = "#62ce3d",
+  "SMOT-A" = "#4991af",
+  "LANG" = "#0b2fff",
+  "FPN-B" = "#e4e400",
+  "FPN-A" = "#f09321",
+  "dATN-A" = "#0a7021",
+  "VIS-C" = "#771185",
+  "SAL_PMN" = "#febceb",
+  "DN-A" = "#643149")
+
+range(IndividualNetworks$Mean_Activity)
+
+## Creating an additional variable for network labels that do not include the subject ID:
+
+IndividualNetworks <- IndividualNetworks %>%
+  mutate(Network = str_replace(Subject_Network, "^[0-9]+_", ""))
+
+```
+
+```{r plotting functions, echo = FALSE, message = FALSE, warning = FALSE}
+
+## PLOTTING FUNCTIONS: 
+
+## SESSION plotting function:
+
+create_by_session_plot <- function(roi, df, column_name, ROI_color) {
+  
+  roi_df <- df %>%
+    dplyr::filter(grepl(roi, .data[[column_name]], ignore.case = TRUE)) # Filter the data frame based on the ROI
+  
+  mean_activity <- mean(roi_df$Mean_Activity, na.rm = TRUE) # Calculate the mean activity
+
+  roi_plot <- ggplot(roi_df, aes(x = Session, y = Mean_Activity, group = SubjectID)) +
+    geom_line(color = ROI_color, alpha = 0.7, linetype = "dotted") +  # Set color aesthetic for lines
+    geom_point(color = ROI_color) +  # Set color argument for points
+    geom_hline(yintercept = mean_activity, color = ROI_color) +  # Add dashed line at mean activity
+    geom_hline(yintercept = 0, linetype = "dotted", color = "#4c4c4c") +  # Add black dashed horizontal line at y = 0
+    annotate("text", x = 11.5, y = mean_activity, label = paste0("Mean(", round(mean_activity, 2),")"), color = ROI_color, size = 3, vjust = 1.2) +
+    labs(title = paste(roi, "activity across sessions"), x = "Session", y = paste("Activity (Faces > Shapes)", sep = ""), color = "Subject") +
+    theme_minimal() +
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_line(color = "#efefef"),
+          panel.border = element_rect(fill = NA, color = "black")) +
+    ylim(-3, 6) +
+    scale_x_continuous(breaks = 1:12, labels = as.character(1:12))
+   
+  return(roi_plot)
+}
+
+## Plotting function that plots network activity by subject:
+
+data <- IndividualNetworks
+subject_id <- 1003
+color_palette <- Individual_colors
+
+plot_subject_data <- function(data, subject_id, color_palette) {
+  # Filter data for the specific subject
+  subject_data <- data %>%
+    dplyr::filter(SubjectID == subject_id)
+  
+  # Proceed with plotting
+  subject_plot <- ggplot(subject_data, aes(x = Network, y = Mean_Activity)) +
+    geom_jitter(aes(color = factor(Network)), width = 0.2, height = 0, show.legend = FALSE, alpha = 0.5) +
+    stat_summary(fun = mean, geom = "point", color = "black", size = 3) +
+    stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2, color = "black") +
+    geom_hline(yintercept = 0, linetype = "dotted", color = "#4c4c4c") +  # Add black dashed horizontal line at y = 0
+    scale_color_manual(values = color_palette) +  # Use your custom color palette
+    labs(
+      title = paste("Activity by Network for Subject", subject_id), 
+      x = "Network", 
+      y = "Activity (Face > Shapes)", 
+      color = "Network"
+    ) +
+    theme_minimal() + 
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "#efefef"),
+      panel.border = element_rect(fill = NA, color = "black")
+    ) +
+    ylim(-4, 6) 
+  
+  return(subject_plot)
+}
+
+```
+
+### MetaAnalytic Based ROIs Activity:
+
+```{r ROI_plot, echo=FALSE, message = FALSE, warning = FALSE}
+
+### ---------- Meta Analysis Based ROI Activity:  #####
+
+ROI_plot <- ggplot(MetaAnalysisROI, aes(x = ROI, y = Mean_Activity)) +
+  geom_jitter(color = "grey", width = 0.2, height = 0, show.legend = TRUE, alpha = 0.5) + 
+  stat_summary(fun = mean, geom = "point", color = "black", size = 3) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2, color = "black") +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "#4c4c4c") +  
+  labs(title = "Activity by ROI",x = "ROI",y = "Activity (Faces > Shapes)", color = "Subject") +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(color = "#efefef"),
+        panel.border = element_rect(fill = NA, color = "black")) +
+  ylim(-4, 6) 
+
+ROI_plot
+
+```
+
+::: panel-tabset
+#### Amygdala
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+Amgydala_plot <- create_by_session_plot("Amygdala", MetaAnalysisROI, "ROI", "red")
+Amgydala_plot
+```
+
+#### r_Fusiform
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+r_Fusiform_plot <- create_by_session_plot("r_Fusiform", MetaAnalysisROI, "ROI", "#771185")
+r_Fusiform_plot
+```
+
+#### mPFC
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE} 
+m_PFC_plot <- create_by_session_plot("mPFC", MetaAnalysisROI, "ROI", "#643149") 
+m_PFC_plot
+```
+:::
+
+### Group Network Activity:
+```{r GroupNetwork_plot, echo=FALSE, message = FALSE, warning = FALSE}
+
+GroupNetwork_plot <- ggplot(GroupNetworks, aes(x = Network, y = Mean_Activity)) +
+  geom_jitter(color = "grey", width = 0.2, height = 0, show.legend = TRUE, alpha = 0.5) + 
+  stat_summary(fun = mean, geom = "point", color = "black", size = 3) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2, color = "black") +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "#4c4c4c") + 
+  labs(title = "Activity by Group Based Network",x = "Network",y = "Activity (Faces > Shapes)", color = "Subject") +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(color = "#efefef"),
+        panel.border = element_rect(fill = NA, color = "black")) +
+  ylim(-4, 6) 
+
+GroupNetwork_plot
+
+```
+::: panel-tabset
+
+#### VIS-2 Activity
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+VIS_2_plot <- create_by_session_plot("VIS-2", GroupNetworks, "Network","#771185")
+VIS_2_plot
+
+```
+
+#### DAN-1 Activity
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+DAN_1_plot <- create_by_session_plot("DAN-1", GroupNetworks, "Network","#62ce3d")
+DAN_1_plot
+```
+
+#### FP-3 Activity
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE} 
+FP_3_plot <- create_by_session_plot("FP-3", GroupNetworks, "Network", "#e4e400") 
+FP_3_plot
+```
+:::
+
+### Individualized Network Activity:
+
+```{r IndividualNetwork_plot, echo=FALSE, message = FALSE, warning = FALSE}
+
+IndividualNetwork_plot <- ggplot(IndividualNetworks, aes(x = Network,y = Mean_Activity)) +
+  geom_jitter(aes(color = factor(Network)), width = 0.2, height = 0, show.legend = FALSE, alpha = 0.5) +
+  #scale_shape_manual(values = c(19,25)) +
+  stat_summary(fun = mean, geom = "point", color = "black", size = 3) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2, color = "black") +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "#4c4c4c") +  # Add black dashed horizontal line at y = 0
+  scale_color_manual(values = Individual_colors) +  # Use your custom color palette
+  labs(title = "Activity by Network", x = "Network", y = "Activity (Face > Shapes)", color = "Network") +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(color = "#efefef"),
+        panel.border = element_rect(fill = NA, color = "black")) +
+  ylim(-4, 6) 
+
+IndividualNetwork_plot
+
+```
+
+::: panel-tabset
+
+#### VIS-C 
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+VIS_C_plot <- create_by_session_plot("VIS-C", IndividualNetworks, "Network","#771185")
+VIS_C_plot
+
+```
+
+#### dATN-B 
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+dATN_B_plot <- create_by_session_plot("dATN-B", IndividualNetworks, "Network","#62ce3d")
+dATN_B_plot
+```
+:::
+
+## Boundary Approach Comparison:
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+## VISUAL NETWORKS:
+
+# Updating r_Fusiform_plot to have a title "MetaAnalysisBased ROI: r_Fusiform" and subtitle "Activity (Faces > Shapes) by session":
+r_Fusiform_plot <- r_Fusiform_plot + labs(title = "MetaAnalysisBased ROI", subtitle = "r_Fusiform")
+
+# Updating VIS_2_plot to have a bold title "Group Based Networks: VIS-2" and subtitle "Activity (Faces > Shapes) by session":
+VIS_2_plot <- VIS_2_plot + labs(title = "GroupBased Network ", subtitle = "VIS-2")
+
+# Updating VIS_C_plot to have a bold title "Individualized Network: VIS-C" and subtitle "Activity (Faces > Shapes) by session":
+VIS_C_plot <- VIS_C_plot + labs(title = "Individualized Network", subtitle = "VIS-C")
+
+r_Fusiform_plot + VIS_2_plot + VIS_C_plot
+
+## DAN NETWORKS:
+
+# Updating DAN_1_plot to have a title "Group Based Networks: DAN-1" and subtitle "Activity (Faces > Shapes) by session":
+DAN_1_plot <- DAN_1_plot + labs(title = "GroupBased Network", subtitle = "DAN-1")
+
+# Updating dATN_B_plot to have a title "Group Based Networks: dATN-B" and subtitle "Activity (Faces > Shapes) by session":
+dATN_B_plot <- dATN_B_plot + labs(title = "Individualized Network", subtitle = "dATN-B")
+
+DAN_1_plot + dATN_B_plot
+
+```
+## Subject Specific Summaries: 
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+## Subject plots:
+
+INDIV_1003_plot <- plot_subject_data(IndividualNetworks, "1003", Individual_colors)
+INDIV_1008_plot  <- plot_subject_data(IndividualNetworks, "1008", Individual_colors)
+INDIV_1003_plot + INDIV_1008_plot 
+
+```
